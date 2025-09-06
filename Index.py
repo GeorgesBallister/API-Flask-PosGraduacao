@@ -1,80 +1,56 @@
-# Bibliotecas
-import random
-import uuid
-
 # app.py
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Um "banco de dados" simples para demonstração
-users = {}
+# "Banco" em memória
+users = {}  
 
-def gerar_id_unico(banco):
-    while True:
-        novo_id = random.randint(1,99999999999)
-        
-        if all(registro["idDoUsuario"] != novo_id for registro in banco.values()):
-            return novo_id
-        
-        
-        
+def normaliza_cpf(cpf: str) -> str:
+    return ''.join(ch for ch in cpf if ch.isdigit())
 
-
-# Nosos Banco
 @app.route('/users/register', methods=['POST'])
 def register_user():
-    # Obtém os dados JSON da requisição
-    data = request.get_json()
-    
-    # Validação básica
-    if not data or 'cpf' not in data or 'datadeNascimento' not in data or 'nomeCompleto' not in data or 'email' not in data or 'telefone' not in data or 'sexo' not in data:
-        return jsonify({"error": "Dados inválidos: Todos os campos são obrigatórios"}), 400
-    
-    # Campos
-    nomeCompleto = data['nomeCompleto']
-    cpf = data['cpf']
-    datadeNascimento = data['datadeNascimento'] 
-    email = data['email']
-    telefone = data['telefone']
-    sexo = data['sexo']
-    
-    # Verifica se o usuário já existe
-    if any(registro["cpf"] == cpf for registro in users.values()):
-        return jsonify({"error": "Usuário já existe"}), 409
+    data = request.get_json() or {}
+    obrig = ['cpf','datadeNascimento','nomeCompleto','email','telefone','sexo']
+    if any(c not in data or not data[c] for c in obrig):
+        return jsonify({"error": "Dados inválidos: Todos os campos são obrigatórios", "campos_obrigatorios": obrig}), 400
 
-    idDoUsuario = gerar_id_unico(users)
-   
-    # "Salva" o novo usuário
-    users[idDoUsuario] = { "idDoUsuario" : idDoUsuario, "nomeCompleto" : nomeCompleto, "cpf" : cpf, "datadeNascimento" : datadeNascimento, "telefone" : telefone, "email" : email, "sexo" : sexo}
+    # normaliza entradas
+    data['cpf'] = normaliza_cpf(data['cpf'])
 
-    # Retorna uma resposta de sucesso
-    return jsonify({"message": f"Usuário '{nomeCompleto}' cadastrado com sucesso!"}), 201
+    # regra simples para id
+    novo_id = max([u["idDoUsuario"] for u in users.values()], default=0) + 1
+    data['idDoUsuario'] = novo_id
 
-# --- Buscar dados de um usuário ---
-@app.route('/users/<cpf>/<datadeNascimento>', methods=['GET'])
-def get_user(cpf, datadeNascimento):
-    
-    for usuario in users.values():
-        if usuario["cpf"] == cpf and usuario["datadeNascimento"] == datadeNascimento:
-            return jsonify(usuario), 200
-    
-    return jsonify({"error": "Usuário não encontrado"}), 404
+    # previne duplicidade por cpf + data nasc
+    for u in users.values():
+        if u['cpf'] == data['cpf']:
+            return jsonify({"error": "Usuário já cadastrado (CPF) ."}), 409
 
+    users[str(novo_id)] = data
+    return jsonify({"message": "Usuário cadastrado com sucesso!", "usuario": data}), 201
 
-# --- Puxa tudo do Banco de Dados ---
+@app.route('/users/find', methods=['GET'])
+def find_user():
+    cpf = request.args.get('cpf', '')
+    datadeNascimento  = request.args.get('datadeNascimento', '')
+    if not cpf or not datadeNascimento:
+        return jsonify({"error": "Informe cpf e datadeNascimento na query string"}), 400
+
+    cpf = normaliza_cpf(cpf)
+    for u in users.values():
+        if u['cpf'] == cpf and u['datadeNascimento'] == datadeNascimento:
+            return jsonify({"usuario": u}), 200
+
+    return jsonify({"message": "Usuário não encontrado"}), 404
+
+# NOVA ROTA - retorna todos os registros
 @app.route('/users/all', methods=['GET'])
 def get_all_users():
-   
-    dados_do_Usuario = users
-        # Cria uma cópia dos dados para não enviar a senha
-    user_info_to_send = dados_do_Usuario.copy()
-        
-        # Você pode adicionar mais dados aqui, como 'email', 'nome', etc.
-        # Por exemplo: user_info_to_send['email'] = 'exemplo@teste.com'
-        
-    return jsonify(user_info_to_send), 200
-
+    if not users:
+        return jsonify({"message": "Nenhum usuário cadastrado"}), 200
+    return jsonify({"usuarios": list(users.values())}), 200
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host='127.0.0.1', port=5000, debug=True)
