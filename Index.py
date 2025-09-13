@@ -1,56 +1,77 @@
-# app.py
+# Bibliotecas que vou usar para fazer a construção da API (FLASK)
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-app = Flask(__name__)
 
-# "Banco" em memória
-users = {}  
+# ! ====================== MODULES ======================
+# * Bem, aqui resolvi separa todos as "funções (def)" que os endpoints executam em modulos todos organizados dentro da pasta utils, podendo ter assim um controle muito mais versatil de como cada função vai interagir com o meu ambiente da API, isolando todos os problemas em seus respectivos lugares e adotando alguns dos conceitos abordados pelo livro "Codigo Limpo", só que aplicado ao contexto do meu ambiente e tecnologia.
 
-def normaliza_cpf(cpf: str) -> str:
-    return ''.join(ch for ch in cpf if ch.isdigit())
+# * Dito isto, todas as novas funções que forem criadas devem seguir esta "regra de negocio" para que se mantenha o ambiente organizado e facilite a manutenibilidade.
+
+# Puxa as funções do modulo para carregar o mock
+from utils.modules.ManipulacaoDoDB import load_mock
+
+# Modulo para funções de POST
+from utils.controllers.POST_Functions import RegistrarNovoUsuario
+
+# Modulo para funções de GET
+from utils.controllers.GET_Functions import encontrarUsuario_PeloCPF_E_DataDeNAS, todosOsUsuarios
+
+# Modulo para funções de PUT
+from utils.controllers.PUT_Functions import AtualizarRegistroPorID
+
+# Modulo para funções de PUT
+from utils.controllers.DELETE_Functions import ApagarDadosPorID
+
+# ! Instância Flask e Nome da API
+app = Flask("API-SENAC") 
+
+
+# "Banco" este pseudo banco de dados NOSQL vai ser por completo concentrado dentro de um arquivo JSON, utilizando de sua estrutura versatio, eu consegui desenvolver todos os conceitos do CRUD dento da arquitetura de uma REST API, com todos os HTTP METHODS interagindo com este arquivo atraves dos endpoints
+DADOSBD = "Dados/DataBase.json"
+
+
+
+# ! ====================== Endpoints ======================
+
+## === MOCK DE DADOS FICTICIOS ===
+@app.route('/mock', methods={"POST"})
+def enviarMock():
+    return load_mock(DADOSBD);
+
+
+## === HTTP POST's ===
 
 @app.route('/users/register', methods=['POST'])
 def register_user():
-    data = request.get_json() or {}
-    obrig = ['cpf','datadeNascimento','nomeCompleto','email','telefone','sexo']
-    if any(c not in data or not data[c] for c in obrig):
-        return jsonify({"error": "Dados inválidos: Todos os campos são obrigatórios", "campos_obrigatorios": obrig}), 400
+   return RegistrarNovoUsuario(DADOSBD);
 
-    # normaliza entradas
-    data['cpf'] = normaliza_cpf(data['cpf'])
+## === HTTP GET's ===
 
-    # regra simples para id
-    novo_id = max([u["idDoUsuario"] for u in users.values()], default=0) + 1
-    data['idDoUsuario'] = novo_id
-
-    # previne duplicidade por cpf + data nasc
-    for u in users.values():
-        if u['cpf'] == data['cpf']:
-            return jsonify({"error": "Usuário já cadastrado (CPF) ."}), 409
-
-    users[str(novo_id)] = data
-    return jsonify({"message": "Usuário cadastrado com sucesso!", "usuario": data}), 201
 
 @app.route('/users/find', methods=['GET'])
 def find_user():
-    cpf = request.args.get('cpf', '')
-    datadeNascimento  = request.args.get('datadeNascimento', '')
-    if not cpf or not datadeNascimento:
-        return jsonify({"error": "Informe cpf e datadeNascimento na query string"}), 400
+    return encontrarUsuario_PeloCPF_E_DataDeNAS(DADOSBD)
 
-    cpf = normaliza_cpf(cpf)
-    for u in users.values():
-        if u['cpf'] == cpf and u['datadeNascimento'] == datadeNascimento:
-            return jsonify({"usuario": u}), 200
-
-    return jsonify({"message": "Usuário não encontrado"}), 404
-
-# NOVA ROTA - retorna todos os registros
 @app.route('/users/all', methods=['GET'])
 def get_all_users():
-    if not users:
-        return jsonify({"message": "Nenhum usuário cadastrado"}), 200
-    return jsonify({"usuarios": list(users.values())}), 200
+   return todosOsUsuarios(DADOSBD)
 
+
+## === HTTP PUT's ===
+
+@app.route('/users/<id_str>', methods=['PUT'])
+def update_user(id_str):
+    return AtualizarRegistroPorID(DADOSBD, id_str)
+
+## === HTTP DELETE's ===
+
+@app.route('/users/<id_str>', methods=['DELETE'])
+def delete_user(id_str):
+    return ApagarDadosPorID(DADOSBD, id_str)
+
+
+# ! Rodar API
 if __name__ == '__main__':
+    # Ajuste a porta/host se necessário
     app.run(host='127.0.0.1', port=5000, debug=True)
